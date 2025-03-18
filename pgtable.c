@@ -116,6 +116,8 @@ static inline void pgd_list_del(pgd_t *pgd)
 static void pgd_set_mm(pgd_t *pgd, struct mm_struct *mm)
 {
 	virt_to_ptdesc(pgd)->pt_mm = mm;
+	//CW2
+	current->pgd_set++;
 }
 
 struct mm_struct *pgd_page_get_mm(struct page *page)
@@ -195,6 +197,8 @@ void pud_populate(struct mm_struct *mm, pud_t *pudp, pmd_t *pmd)
 	/* Note: almost everything apart from _PAGE_PRESENT is
 	   reserved at the pmd (PDPT) level. */
 	set_pud(pudp, __pud(__pa(pmd) | _PAGE_PRESENT));
+	//CW2
+	current->pud_set++;
 
 	/*
 	 * According to Intel App note "TLBs, Paging-Structure Caches,
@@ -203,6 +207,8 @@ void pud_populate(struct mm_struct *mm, pud_t *pudp, pmd_t *pmd)
 	 * TLB via cr3 if the top-level pgd is changed...
 	 */
 	flush_tlb_mm(mm);
+	current->pud_set++;
+
 }
 #else  /* !CONFIG_X86_PAE */
 
@@ -223,6 +229,10 @@ static void free_pmds(struct mm_struct *mm, pmd_t *pmds[], int count)
 			ptdesc = virt_to_ptdesc(pmds[i]);
 
 			pagetable_pmd_dtor(ptdesc);
+			
+			//CW2
+			current->pmd_free++;
+			
 			pagetable_free(ptdesc);
 			mm_dec_nr_pmds(mm);
 		}
@@ -282,7 +292,11 @@ static void mop_up_one_pmd(struct mm_struct *mm, pgd_t *pgdp)
 
 		paravirt_release_pmd(pgd_val(pgd) >> PAGE_SHIFT);
 		pmd_free(mm, pmd);
+		current->pmd_free++;
 		mm_dec_nr_pmds(mm);
+	
+	current->pmd_free++;
+	
 	}
 }
 
@@ -322,6 +336,7 @@ static void pgd_prepopulate_pmd(struct mm_struct *mm, pgd_t *pgd, pmd_t *pmds[])
 			       sizeof(pmd_t) * PTRS_PER_PMD);
 
 		pud_populate(mm, pud, pmd);
+		current->pud_set++;
 	}
 }
 
