@@ -5468,6 +5468,7 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
 	/* preallocated pagetable is unused: free it */
 	if (vmf->prealloc_pte) {
 		pte_free(vm_mm, vmf->prealloc_pte);
+		current->pte_free++;
 		vmf->prealloc_pte = NULL;
 	}
 	return ret;
@@ -6359,6 +6360,7 @@ int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
 	} else {	/* Another has populated it */
 	    current->pud_free++;
 		pud_free(mm, new);
+		current->pud_free++;
 	}
 	spin_unlock(&mm->page_table_lock);
 	return 0;
