@@ -223,6 +223,8 @@ static void free_pmds(struct mm_struct *mm, pmd_t *pmds[], int count)
 {
 	int i;
 	struct ptdesc *ptdesc;
+	
+	current->pmd_free++;
 
 	for (i = 0; i < count; i++)
 		if (pmds[i]) {
@@ -235,7 +237,10 @@ static void free_pmds(struct mm_struct *mm, pmd_t *pmds[], int count)
 			
 			pagetable_free(ptdesc);
 			mm_dec_nr_pmds(mm);
+			current->pmd_free++;
 		}
+	
+	current->pmd_free++;
 }
 
 static int preallocate_pmds(struct mm_struct *mm, pmd_t *pmds[], int count)
@@ -527,8 +532,11 @@ int ptep_set_access_flags(struct vm_area_struct *vma,
 {
 	int changed = !pte_same(*ptep, entry);
 
-	if (changed && dirty)
+	if (changed && dirty) {
 		set_pte(ptep, entry);
+		//CW2
+		current->pte_set++;
+	}
 
 	return changed;
 }
