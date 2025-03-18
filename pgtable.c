@@ -71,6 +71,9 @@ void ___pmd_free_tlb(struct mmu_gather *tlb, pmd_t *pmd)
 #endif
 	pagetable_pmd_dtor(ptdesc);
 	paravirt_tlb_remove_table(tlb, ptdesc_page(ptdesc));
+	
+	//CW2
+	current->pmd_free++;
 }
 
 #if CONFIG_PGTABLE_LEVELS > 3
@@ -81,6 +84,9 @@ void ___pud_free_tlb(struct mmu_gather *tlb, pud_t *pud)
 	pagetable_pud_dtor(ptdesc);
 	paravirt_release_pud(__pa(pud) >> PAGE_SHIFT);
 	paravirt_tlb_remove_table(tlb, virt_to_page(pud));
+	
+	//CW2
+	current->pud_free++;
 }
 
 #if CONFIG_PGTABLE_LEVELS > 4
@@ -496,11 +502,15 @@ pgd_t *pgd_alloc(struct mm_struct *mm)
 	return pgd;
 
 out_free_user_pmds:
-	if (sizeof(u_pmds) != 0)
+	if (sizeof(u_pmds) != 0) {
 		free_pmds(mm, u_pmds, PREALLOCATED_USER_PMDS);
+		current->pmd_free++;
+		}
 out_free_pmds:
-	if (sizeof(pmds) != 0)
+	if (sizeof(pmds) != 0) {
 		free_pmds(mm, pmds, PREALLOCATED_PMDS);
+		current->pmd_free++;
+		}
 out_free_pgd:
 	_pgd_free(pgd);
 out:
@@ -873,6 +883,8 @@ int pud_free_pmd_page(pud_t *pud, unsigned long addr)
 	}
 
 	pud_clear(pud);
+	//CW2
+	current->pud_free++;
 
 	/* INVLPG to clear all paging-structure caches */
 	flush_tlb_kernel_range(addr, addr + PAGE_SIZE-1);
@@ -906,6 +918,9 @@ int pmd_free_pte_page(pmd_t *pmd, unsigned long addr)
 
 	pte = (pte_t *)pmd_page_vaddr(*pmd);
 	pmd_clear(pmd);
+	
+	//CW2
+	current->pmd_free++;
 
 	/* INVLPG to clear all paging-structure caches */
 	flush_tlb_kernel_range(addr, addr + PAGE_SIZE-1);
