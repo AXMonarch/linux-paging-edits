@@ -448,14 +448,8 @@ int __pte_alloc(struct mm_struct *mm, pmd_t *pmd)
 		return -ENOMEM;
 
 	pmd_install(mm, pmd, &new);
-	if (new) {
+	if (new)
 		pte_free(mm, new);
-		current->pte_free++;
-	}
-		
-	else
-	    current->pte_alloc++;
-	    
 	return 0;
 }
 
@@ -5468,7 +5462,6 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
 	/* preallocated pagetable is unused: free it */
 	if (vmf->prealloc_pte) {
 		pte_free(vm_mm, vmf->prealloc_pte);
-		current->pte_free++;
 		vmf->prealloc_pte = NULL;
 	}
 	return ret;
@@ -5763,92 +5756,90 @@ split:
  */
 static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 {
-	pte_t entry;
+// CW2
+    pte_t entry;
+    struct task_struct *task = current; // Get current task
 
-	if (unlikely(pmd_none(*vmf->pmd))) {
-		/*
-		 * Leave __pte_alloc() until later: because vm_ops->fault may
-		 * want to allocate huge page, and if we expose page table
-		 * for an instant, it will be difficult to retract from
-		 * concurrent faults and from rmap lookups.
-		 */
-		vmf->pte = NULL;
-		vmf->flags &= ~FAULT_FLAG_ORIG_PTE_VALID;
-	} else {
-		pmd_t dummy_pmdval;
+    // Increment counters for different fault types
+    if (unlikely(pmd_none(*vmf->pmd))) {
+        vmf->pte = NULL;
+        vmf->flags &= ~FAULT_FLAG_ORIG_PTE_VALID;
+    } else {
+        pmd_t dummy_pmdval;
 
-		/*
-		 * A regular pmd is established and it can't morph into a huge
-		 * pmd by anon khugepaged, since that takes mmap_lock in write
-		 * mode; but shmem or file collapse to THP could still morph
-		 * it into a huge pmd: just retry later if so.
-		 *
-		 * Use the maywrite version to indicate that vmf->pte may be
-		 * modified, but since we will use pte_same() to detect the
-		 * change of the !pte_none() entry, there is no need to recheck
-		 * the pmdval. Here we chooes to pass a dummy variable instead
-		 * of NULL, which helps new user think about why this place is
-		 * special.
-		 */
-		vmf->pte = pte_offset_map_rw_nolock(vmf->vma->vm_mm, vmf->pmd,
-						    vmf->address, &dummy_pmdval,
-						    &vmf->ptl);
-		if (unlikely(!vmf->pte))
-			return 0;
-		vmf->orig_pte = ptep_get_lockless(vmf->pte);
-		vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
+        vmf->pte = pte_offset_map_rw_nolock(vmf->vma->vm_mm, vmf->pmd,
+                                             vmf->address, &dummy_pmdval,
+                                             &vmf->ptl);
+        if (unlikely(!vmf->pte))
+            return 0;
+        vmf->orig_pte = ptep_get_lockless(vmf->pte);
+        vmf->flags |= FAULT_FLAG_ORIG_PTE_VALID;
 
-		if (pte_none(vmf->orig_pte)) {
-			pte_unmap(vmf->pte);
-			vmf->pte = NULL;
-		}
-	}
+        if (pte_none(vmf->orig_pte)) {
+            pte_unmap(vmf->pte);
+            vmf->pte = NULL;
+        }
+    }
 
-	if (!vmf->pte)
-		return do_pte_missing(vmf);
+    if (!vmf->pte)
+        return do_pte_missing(vmf);
 
-	if (!pte_present(vmf->orig_pte))
-		return do_swap_page(vmf);
+    if (!pte_present(vmf->orig_pte))
+        return do_swap_page(vmf);
 
-	if (pte_protnone(vmf->orig_pte) && vma_is_accessible(vmf->vma))
-		return do_numa_page(vmf);
+    if (pte_protnone(vmf->orig_pte) && vma_is_accessible(vmf->vma))
+        return do_numa_page(vmf);
 
-	spin_lock(vmf->ptl);
-	entry = vmf->orig_pte;
-	if (unlikely(!pte_same(ptep_get(vmf->pte), entry))) {
-		update_mmu_tlb(vmf->vma, vmf->address, vmf->pte);
-		goto unlock;
-	}
-	if (vmf->flags & (FAULT_FLAG_WRITE|FAULT_FLAG_UNSHARE)) {
-		if (!pte_write(entry))
-			return do_wp_page(vmf);
-		else if (likely(vmf->flags & FAULT_FLAG_WRITE))
-			entry = pte_mkdirty(entry);
-	}
-	entry = pte_mkyoung(entry);
-	if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
-				vmf->flags & FAULT_FLAG_WRITE)) {
-		update_mmu_cache_range(vmf, vmf->vma, vmf->address,
-				vmf->pte, 1);
-	} else {
-		/* Skip spurious TLB flush for retried page fault */
-		if (vmf->flags & FAULT_FLAG_TRIED)
-			goto unlock;
-		/*
-		 * This is needed only for protection faults but the arch code
-		 * is not yet telling us if this is a protection fault or not.
-		 * This still avoids useless tlb flushes for .text page faults
-		 * with threads.
-		 */
-		if (vmf->flags & FAULT_FLAG_WRITE)
-			flush_tlb_fix_spurious_fault(vmf->vma, vmf->address,
-						     vmf->pte);
-	}
+    spin_lock(vmf->ptl);
+    entry = vmf->orig_pte;
+    if (unlikely(!pte_same(ptep_get(vmf->pte), entry))) {
+        update_mmu_tlb(vmf->vma, vmf->address, vmf->pte);
+        goto unlock;
+    }
+    
+    // Increment fault counters based on flags
+    if (vmf->flags & FAULT_FLAG_WRITE)
+        task->write_faults++;  // Increment write fault counter
+
+    if (vmf->flags & FAULT_FLAG_USER)
+        task->user_faults++;   // Increment user fault counter
+
+    if ((vmf->flags & FAULT_FLAG_USER) && (vmf->vma->vm_flags & VM_EXEC))
+        task->instruction_faults++;  // Increment instruction fault counter
+
+    // Check for COW (Copy-On-Write) faults by looking at the PTE
+    if (pte_young(entry) && !pte_write(entry) && !pte_dirty(entry))
+        task->cow_faults++;    // Increment Copy-On-Write fault counter
+
+    if (vmf->vma->vm_flags & VM_LOCKED)
+        task->mlocked_faults++; // Increment mlocked fault counter
+
+    if (vmf->flags & (FAULT_FLAG_WRITE|FAULT_FLAG_UNSHARE)) {
+        if (!pte_write(entry)) {
+            task->cow_faults++;    // COW faults happen here too
+            return do_wp_page(vmf);
+        }
+        else if (likely(vmf->flags & FAULT_FLAG_WRITE))
+            entry = pte_mkdirty(entry);
+    }
+    entry = pte_mkyoung(entry);
+
+    if (ptep_set_access_flags(vmf->vma, vmf->address, vmf->pte, entry,
+                              vmf->flags & FAULT_FLAG_WRITE)) {
+        update_mmu_cache_range(vmf, vmf->vma, vmf->address,
+                               vmf->pte, 1);
+    } else {
+        if (vmf->flags & FAULT_FLAG_TRIED)
+            goto unlock;
+        
+        if (vmf->flags & FAULT_FLAG_WRITE)
+            flush_tlb_fix_spurious_fault(vmf->vma, vmf->address,
+                                         vmf->pte);
+    }
 unlock:
-	pte_unmap_unlock(vmf->pte, vmf->ptl);
-	return 0;
+    pte_unmap_unlock(vmf->pte, vmf->ptl);
+    return 0;
 }
-
 /*
  * On entry, we hold either the VMA lock or the mmap_lock
  * (FAULT_FLAG_VMA_LOCK tells you which).  If VM_FAULT_RETRY is set in
@@ -6348,20 +6339,14 @@ int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
 	pud_t *new = pud_alloc_one(mm, address);
 	if (!new)
 		return -ENOMEM;
-	
-	//CW2
-	current->pud_alloc++;
 
 	spin_lock(&mm->page_table_lock);
 	if (!p4d_present(*p4d)) {
 		mm_inc_nr_puds(mm);
 		smp_wmb(); /* See comment in pmd_install() */
 		p4d_populate(mm, p4d, new);
-	} else {	/* Another has populated it */
-	    current->pud_free++;
+	} else	/* Another has populated it */
 		pud_free(mm, new);
-		current->pud_free++;
-	}
 	spin_unlock(&mm->page_table_lock);
 	return 0;
 }
@@ -6379,15 +6364,12 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	if (!new)
 		return -ENOMEM;
 
-    current->pmd_alloc++;
-    
 	ptl = pud_lock(mm, pud);
 	if (!pud_present(*pud)) {
 		mm_inc_nr_pmds(mm);
 		smp_wmb(); /* See comment in pmd_install() */
 		pud_populate(mm, pud, new);
 	} else {	/* Another has populated it */
-	    current->pmd_free++;
 		pmd_free(mm, new);
 	}
 	spin_unlock(ptl);
