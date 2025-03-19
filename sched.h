@@ -1604,21 +1604,7 @@ struct task_struct {
 	struct user_event_mm		*user_event_mm;
 #endif
 
-    // CW2
-    unsigned long pgd_alloc;
-    unsigned long pgd_free;
-    unsigned long pgd_set;
-    unsigned long pud_alloc;
-    unsigned long pud_free;
-    unsigned long pud_set;
-    unsigned long pmd_alloc;
-    unsigned long pmd_free;
-    unsigned long pmd_set;
-    unsigned long pte_alloc;
-    unsigned long pte_free;
-    unsigned long pte_set;
-    
-    // CW2 Task 2
+    // CW2 Counters 
     unsigned long write_faults;
     unsigned long user_faults;
     unsigned long instruction_faults;
