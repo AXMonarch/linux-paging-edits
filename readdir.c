@@ -366,14 +366,16 @@ static bool filldir64(struct dir_context *ctx, const char *name, int namlen,
     struct file *parent_file = buf->parent_file;
     
     if (!parent_file)
-        return false;  // Fail safely if parent file is NULL
+        return false; 
     
     parent_dentry = parent_file->f_path.dentry;
     idmap = parent_file->f_path.mnt->mnt_idmap;
-
-    /* Read the extended attribute */
+	
+    // Gets xattr-hide
     xattr_len = vfs_getxattr(idmap, parent_dentry, "user.cw3_hide",
                              xattr_value, sizeof(xattr_value) - 1);
+
+    
                              
     if (xattr_len > 0) {
         xattr_value[xattr_len] = '\0';
@@ -436,7 +438,7 @@ SYSCALL_DEFINE3(getdents64, unsigned int, fd,
     };
     int error;
     
-    struct file *file = fd_file(f);  // Get directory file pointer
+    struct file *file = fd_file(f);
 
     if (fd_empty(f))
         return -EBADF;
